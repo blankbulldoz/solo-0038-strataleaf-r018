@@ -25,11 +25,31 @@ with Database("strataleaf.db") as db:
 
 集合创建不是幂等操作；再次运行示例应使用新文件。`expected=0` 仅允许从未出现过的键；删除后保留墓碑版本，再创建必须指定墓碑版本或不带前置版本。没有 `expected` 的写入采用最后提交覆盖，读后修改应携带读取到的版本。
 
+## 分片入口
+
+需要把文档分散到多个独立数据库文件时，使用与 `Database` 同形的集合/键 API `ShardDatabase`。路由元数据写入目录内独立的 `router.db`，每个分片仍是普通单文件数据库；关闭后重开同一目录即可恢复环、迁移台账与跨片事务台账。
+
+```python
+from strataleaf import ShardDatabase
+
+with ShardDatabase("cluster_dir", shard_ids=("s0", "s1")) as cluster:
+    cluster.create_collection("segments")
+    cluster.batch("seed").put("segments", "block_a", {"region": "east"}).commit()
+    print(cluster.explain("segments", "block_a"))          # 槽位/属主/服务分片
+    report = cluster.add_shard("s2")                        # 发布新环并迁完易主键
+    page = cluster.query("segments")                        # 跨片合并 + 一致性清单
+    print(page.manifest)
+```
+
+扩片期间未迁移的键仍由源分片服务，迁移中的写入会惰性完成该键迁移；跨多个分片的批次必须带 `request_key`，preflight 在任何写入前拒绝冲突，失败后凭同一 request key 续提而不是留下未告知的部分成功。
+
 ## 工作流
 
 `python3 -m compileall -q strataleaf examples` 检查源码可编译。`python3 -m examples.workflows commit` 在独立临时目录运行多集合提交、重复请求和回滚示例，打印实际结果后自动清理。可用示例名：
 
 `catalog schema commit snapshot query index feed backup replica compact expire aggregate patch inspect transfer`
+
+分片层示例：`python3 -m examples.shard_workflows shard`，演示可重开路由元数据、扩片期间键归属与读写核对、跨片读一致性清单，以及跨片批次的执行前校验和两阶段续提。语义见 [分片路由与迁移语义](docs/sharding.md)。
 
 每个示例约一秒以内，不需要联网。它们是生产 API 的有限工作流演示；自动化测试仍为 **deferred**，仓库不含测试套件，也不声明测试命令。`examples.observations` 另外提供写锁竞争与保留水位的可复现观测。
 

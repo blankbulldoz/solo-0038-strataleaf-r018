@@ -10,7 +10,7 @@
 
 ## 职责划分
 
-`storage` 拥有连接、WAL 与提交边界；`codec` 负责 JSON 表示及键路径语义；`schema` 负责文档约束；`catalog` 拥有集合当前模式；`transaction` 负责写前置条件与提交回执；`mvcc` 负责版本可见性；`indexes` 拥有当前索引投影；`predicates` 定义筛选语义；`query` 与 `cursors` 协同固定读取视图；`feeds` 拥有消费者确认；`retention` 计算水位和显式到期删除；`archive` 负责完整数据库快照；`replica` 解释提交连续性与目录时序；`aggregate` 计算固定读版本分组；`patch` 负责合并语义及条件写入；`transfer` 管理逻辑文档流；`diagnostics` 比较当前版本与物化索引；`database` 提供组合 API。
+`storage` 拥有连接、WAL 与提交边界；`codec` 负责 JSON 表示及键路径语义；`schema` 负责文档约束；`catalog` 拥有集合当前模式；`transaction` 负责写前置条件与提交回执；`mvcc` 负责版本可见性；`indexes` 拥有当前索引投影；`predicates` 定义筛选语义；`query` 与 `cursors` 协同固定读取视图；`feeds` 拥有消费者确认；`retention` 计算水位和显式到期删除；`archive` 负责完整数据库快照；`replica` 解释提交连续性与目录时序；`aggregate` 计算固定读版本分组；`patch` 负责合并语义及条件写入；`transfer` 管理逻辑文档流；`diagnostics` 比较当前版本与物化索引；`database` 提供组合 API；`shard` 拥有持久哈希环、路由元数据、键迁移状态机与跨片两阶段提交，分片本身复用上述单库 API。
 
 ## 完整工作流
 
@@ -29,10 +29,11 @@
 13. 合并修改：读取当前值，应用对象递归合并和 null 删除，再以原版本前置提交；陈旧预期失败。
 14. 存储检查：联合 SQLite 完整性、引用、日志连续性、保留点、当前索引重算与逻辑指纹给出可观察结果。
 15. 文档转移：逻辑导出键/文档/到期信息，解析全部输入后经相同写入路径整批导入；重复键或错误输入不能留下部分结果。
+16. 分片扩片：以持久哈希环把键路由到独立分片文件，扩片发布新环 epoch 并为易主键登记可续迁台账；迁移复制完整版本链并核对后清理源分片，重开目录恢复路由与迁移；跨片查询附每片修订一致性清单，跨片批次执行前 preflight 并以两阶段台账显式提交或续提。
 
 ## 可观察验证
 
-每条工作流由 `examples.workflows` 的同名有限示例使用真实生产 API 验证，具体命令见 `.project-runtime.json`。正常与冲突结果打印为 JSON。`examples.observations` 复现正常运行边界带来的写锁与保留压力；不预埋损坏或补丁。测试延期，不生成测试套件或任务答案。构建检查只执行标准库编译步骤。
+每条工作流由 `examples.workflows` 的同名有限示例使用真实生产 API 验证，具体命令见 `.project-runtime.json`。正常与冲突结果打印为 JSON。`examples.shard_workflows` 的 `shard` 示例验证分片路由、扩片迁移、重开恢复与跨片提交。`examples.observations` 复现正常运行边界带来的写锁与保留压力；不预埋损坏或补丁。测试延期，不生成测试套件或任务答案。构建检查只执行标准库编译步骤。
 
 ## 一致性与兼容
 
